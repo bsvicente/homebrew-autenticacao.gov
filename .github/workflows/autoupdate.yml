@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout repository
@@ -62,6 +63,18 @@ jobs:
             echo "UPDATED=false" >> $GITHUB_ENV
           fi
 
+      - name: Archive current Cask as a pinned version
+        if: env.UPDATED == 'true'
+        run: |
+          # Copy the Cask being replaced to its own @version file, before it is overwritten
+          OLD_MAIN=$(grep 'version "' Casks/autenticacao-gov.rb | cut -d '"' -f 2 | cut -d',' -f1)
+          sed -e "s/^cask \"autenticacao-gov\" do/cask \"autenticacao-gov@${OLD_MAIN}\" do/" \
+              -e '/^  pkg /i\  conflicts_with cask: "autenticacao-gov"' \
+              Casks/autenticacao-gov.rb > "Casks/autenticacao-gov@${OLD_MAIN}.rb"
+
+          # Keep only the 5 newest pinned versions
+          ls Casks/autenticacao-gov@*.rb | sort -V | head -n -5 | xargs -r rm -f
+
       - name: Calculate SHA256 and update Cask
         if: env.UPDATED == 'true'
         run: |
@@ -74,11 +87,25 @@ jobs:
           sed -i "s/version \".*\"/version \"${NEW_VERSION_STR}\"/" Casks/autenticacao-gov.rb
           sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Casks/autenticacao-gov.rb
 
-      - name: Commit and push changes
+      - name: Commit, push branch and open PR
         if: env.UPDATED == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          BRANCH="cask-update-${NEW_VERSION_STR//,/.}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Casks/autenticacao-gov.rb
+          git checkout -B "$BRANCH"
+          git add Casks/
           git commit -m "chore(cask): update autenticacao-gov to ${NEW_VERSION_STR}"
-          git push
+          git push --force-with-lease -u origin "$BRANCH"
+
+          # Open the PR only once; re-runs just update the branch
+          if [ -z "$(gh pr list --head "$BRANCH" --json number --jq '.[].number')" ]; then
+            gh pr create --base main --head "$BRANCH" \
+              --title "chore(cask): update autenticacao-gov to ${NEW_VERSION_STR}" \
+              --body "Automated update from the upstream release. Merges automatically once approved."
+          fi
+
+          # Merge when the required review is in
+          gh pr merge "$BRANCH" --auto --squash
