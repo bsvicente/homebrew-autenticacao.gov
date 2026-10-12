@@ -2,7 +2,7 @@ name: Update Autenticação.gov Cask
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Roda diariamente à meia-noite
+    - cron: '0 2 * * *' # Runs daily at midnight
   workflow_dispatch:
 
 jobs:
@@ -18,28 +18,28 @@ jobs:
       - name: Fetch latest release assets and parse version/build
         id: latest_release
         run: |
-          # 1. Obtém as informações do release mais recente
+          # 1. Get information about the latest release
           RELEASE_JSON=$(curl -s https://api.github.com/repos/amagovpt/autenticacao.gov/releases/latest)
           
-          # Verifica se a tag é pré-lançamento
+          # Check whether the tag is a pre-release
           TAG_NAME=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
           if echo "$TAG_NAME" | grep -iE 'beta|rc|alpha|dev|preview'; then
-            echo "Release de teste detectado ($TAG_NAME). Ignorando."
+            echo "Test release detected ($TAG_NAME). Ignoring."
             echo "UPDATED=false" >> $GITHUB_ENV
             exit 0
           fi
 
-          # 2. Busca a URL do arquivo .pkg nos assets da release
+          # 2. Find the .pkg file URL in the release assets
           DOWNLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("Autenticacao.gov_MacOS_.*-Signed\\.pkg$")) | .browser_download_url' | head -n 1)
           FILE_NAME=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("Autenticacao.gov_MacOS_.*-Signed\\.pkg$")) | .name' | head -n 1)
 
           if [ -z "$DOWNLOAD_URL" ]; then
-            echo "Erro: Não foi possível encontrar o arquivo .pkg nos assets."
+            echo "Error: Could not find the .pkg file in the assets."
             exit 1
           fi
 
-          # 3. Extrai a versão principal e o número de build usando Regex
-          # Exemplo de FILE_NAME: Autenticacao.gov_MacOS_3.15.0.6058-Signed.pkg
+          # 3. Extract the main version and build number using a regex
+          # Example FILE_NAME: Autenticacao.gov_MacOS_3.15.0.6058-Signed.pkg
           FULL_VER=$(echo "$FILE_NAME" | sed -E 's/Autenticacao.gov_MacOS_(.*)-Signed\.pkg/\1/')
           MAIN_VER=$(echo "$FULL_VER" | cut -d'.' -f1-3) # 3.15.0
           BUILD_NUM=$(echo "$FULL_VER" | cut -d'.' -f4)   # 6058
@@ -53,8 +53,8 @@ jobs:
         id: check
         run: |
           CURRENT_VERSION=$(grep 'version "' Casks/autenticacao-gov.rb | cut -d '"' -f 2)
-          echo "Versão atual no Cask: $CURRENT_VERSION"
-          echo "Versão detectada: $NEW_VERSION_STR"
+          echo "Current version in the Cask: $CURRENT_VERSION"
+          echo "Detected version: $NEW_VERSION_STR"
           
           if [ "$CURRENT_VERSION" != "$NEW_VERSION_STR" ] && [ -n "$NEW_VERSION_STR" ]; then
             echo "UPDATED=true" >> $GITHUB_ENV
@@ -65,12 +65,12 @@ jobs:
       - name: Calculate SHA256 and update Cask
         if: env.UPDATED == 'true'
         run: |
-          echo "Baixando $DOWNLOAD_URL para calcular o SHA256..."
+          echo "Downloading $DOWNLOAD_URL to calculate the SHA256..."
           curl -sL -o release.pkg "$DOWNLOAD_URL"
           
           SHA256=$(sha256sum release.pkg | awk '{print $1}')
           
-          # Atualiza os valores dentro do Cask .rb
+          # Update the values in the .rb Cask
           sed -i "s/version \".*\"/version \"${NEW_VERSION_STR}\"/" Casks/autenticacao-gov.rb
           sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Casks/autenticacao-gov.rb
 
