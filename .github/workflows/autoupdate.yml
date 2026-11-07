@@ -47,6 +47,14 @@ jobs:
 
           NEW_VERSION_STR="${MAIN_VER},${BUILD_NUM}"
 
+          # Upstream has shipped a tag that disagrees with its pkg (e.g. tag v3.16.0,
+          # pkg 3.16.1.6201). The cask uses the asset URL directly, so this is safe,
+          # but flag it for review.
+          TAG_VER=${TAG_NAME#v}
+          if [ "$TAG_VER" != "$FULL_VER" ]; then
+            echo "::warning title=Release tag/package version mismatch::Tag $TAG_NAME but package is $FILE_NAME. Verify the release on upstream."
+          fi
+
           echo "NEW_VERSION_STR=$NEW_VERSION_STR" >> $GITHUB_ENV
           echo "DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
 
@@ -79,13 +87,29 @@ jobs:
         if: env.UPDATED == 'true'
         run: |
           echo "Downloading $DOWNLOAD_URL to calculate the SHA256..."
-          curl -sL -o release.pkg "$DOWNLOAD_URL"
-          
+          # -f: fail on HTTP errors instead of hashing the error page
+          if ! curl -fsSL -o release.pkg "$DOWNLOAD_URL"; then
+            echo "::error title=Download failed::$DOWNLOAD_URL did not return a file. Cask not updated."
+            exit 1
+          fi
+
+          # A .pkg is a xar archive: reject anything else (HTML error page, truncated file)
+          if [ "$(head -c 4 release.pkg)" != "xar!" ]; then
+            echo "::error title=Not a pkg::$DOWNLOAD_URL is not a xar/pkg file. Cask not updated."
+            exit 1
+          fi
+          if [ "$(stat -c %s release.pkg)" -lt 1000000 ]; then
+            echo "::error title=Pkg too small::$DOWNLOAD_URL is suspiciously small. Cask not updated."
+            exit 1
+          fi
+
           SHA256=$(sha256sum release.pkg | awk '{print $1}')
-          
-          # Update the values in the .rb Cask
+
+          # Update the values in the .rb Cask. The URL is written literally, because
+          # upstream tags do not always match the pkg version.
           sed -i "s/version \".*\"/version \"${NEW_VERSION_STR}\"/" Casks/autenticacao-gov.rb
           sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Casks/autenticacao-gov.rb
+          sed -i "s|^  url \".*\"|  url \"${DOWNLOAD_URL}\"|" Casks/autenticacao-gov.rb
 
       - name: Commit, push branch and open PR
         if: env.UPDATED == 'true'
