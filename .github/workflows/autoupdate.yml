@@ -98,7 +98,11 @@ jobs:
           git checkout -B "$BRANCH"
           git add Casks/
           git commit -m "chore(cask): update autenticacao-gov to ${NEW_VERSION_STR}"
-          git push --force-with-lease -u origin "$BRANCH"
+          # Pass the expected remote SHA explicitly: the checkout is single-branch, so
+          # git has no remote-tracking ref for an existing branch and a bare
+          # --force-with-lease is rejected as "stale info" on re-runs.
+          REMOTE_SHA=$(git ls-remote --heads origin "$BRANCH" | cut -f1)
+          git push --force-with-lease="refs/heads/$BRANCH:$REMOTE_SHA" -u origin "$BRANCH"
 
           # Open the PR only once; re-runs just update the branch
           if [ -z "$(gh pr list --head "$BRANCH" --json number --jq '.[].number')" ]; then
