@@ -13,15 +13,19 @@ The `.pkg` installer asks for your admin password.
 
 ### Install an older version
 
-Each of the five previous stable releases has its own cask:
+Each of the five previous stable releases has its own cask. The list below is generated from `Casks/` by `scripts/update_readme.py`; do not edit it by hand.
+
+<!-- casks:start -->
+Latest stable: **3.16.1** (`brew install --cask autenticacao-gov`).
 
 | Version | Install |
 |---|---|
+| 3.15.0 | `brew install --cask autenticacao-gov@3.15.0` |
 | 3.14.0 | `brew install --cask autenticacao-gov@3.14.0` |
 | 3.13.3 | `brew install --cask autenticacao-gov@3.13.3` |
 | 3.13.0 | `brew install --cask autenticacao-gov@3.13.0` |
 | 3.12.0 | `brew install --cask autenticacao-gov@3.12.0` |
-| 3.11.0 | `brew install --cask autenticacao-gov@3.11.0` |
+<!-- casks:end -->
 
 Pinned casks install the same packages as the current one, so only one version can be installed at a time. To switch, uninstall first:
 
