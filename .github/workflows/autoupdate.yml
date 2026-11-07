@@ -47,9 +47,18 @@ jobs:
 
           NEW_VERSION_STR="${MAIN_VER},${BUILD_NUM}"
 
-          # Upstream has shipped a tag that disagrees with its pkg (e.g. tag v3.16.0,
-          # pkg 3.16.1.6201). The cask uses the asset URL directly, so this is safe,
-          # but flag it for review.
+          # 4. Guardrail: the cask builds its URL as
+          #    releases/download/<tag>/Autenticacao.gov_MacOS_<ver>.<build>-Signed.pkg
+          # Upstream has shipped tags that disagree with the pkg version (tag v3.16.0,
+          # pkg 3.16.1.6201). The tag comes from the release, so the URL stays correct
+          # for that case. If the asset is named differently, stop instead of writing
+          # a cask that points at nothing.
+          EXPECTED_URL="https://github.com/amagovpt/autenticacao.gov/releases/download/${TAG_NAME}/Autenticacao.gov_MacOS_${FULL_VER}-Signed.pkg"
+          if [ "$EXPECTED_URL" != "$DOWNLOAD_URL" ]; then
+            echo "::error title=Asset URL not supported::Cask template would produce $EXPECTED_URL but the release asset is $DOWNLOAD_URL. Update the cask template before this can be automated."
+            exit 1
+          fi
+
           TAG_VER=${TAG_NAME#v}
           if [ "$TAG_VER" != "$FULL_VER" ]; then
             echo "::warning title=Release tag/package version mismatch::Tag $TAG_NAME but package is $FILE_NAME. Verify the release on upstream."
@@ -57,22 +66,32 @@ jobs:
 
           echo "NEW_VERSION_STR=$NEW_VERSION_STR" >> $GITHUB_ENV
           echo "DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
 
       - name: Check if Cask needs updating
         id: check
         run: |
           CURRENT_VERSION=$(grep 'version "' Casks/autenticacao-gov.rb | cut -d '"' -f 2)
-          echo "Current version in the Cask: $CURRENT_VERSION"
-          echo "Detected version: $NEW_VERSION_STR"
-          
+          # Tag segment of the cask URL, e.g. "v3.16.0" or the unresolved "v#{version.csv.first}"
+          CURRENT_TAG=$(grep -oP 'releases/download/\K[^/]+' Casks/autenticacao-gov.rb | head -n 1)
+          echo "Current version in the Cask: $CURRENT_VERSION (tag: $CURRENT_TAG)"
+          echo "Detected version: $NEW_VERSION_STR (tag: $TAG_NAME)"
+
+          # A new version needs a new cask. A stale URL on the same version (tag changed
+          # upstream) also needs a rewrite, but must not archive the cask as a pinned version.
+          VERSION_CHANGED=false
           if [ "$CURRENT_VERSION" != "$NEW_VERSION_STR" ] && [ -n "$NEW_VERSION_STR" ]; then
+            VERSION_CHANGED=true
+          fi
+          if [ "$VERSION_CHANGED" = true ] || [ "$CURRENT_TAG" != "$TAG_NAME" ]; then
             echo "UPDATED=true" >> $GITHUB_ENV
           else
             echo "UPDATED=false" >> $GITHUB_ENV
           fi
+          echo "VERSION_CHANGED=$VERSION_CHANGED" >> $GITHUB_ENV
 
       - name: Archive current Cask as a pinned version
-        if: env.UPDATED == 'true'
+        if: env.UPDATED == 'true' && env.VERSION_CHANGED == 'true'
         run: |
           # Copy the Cask being replaced to its own @version file, before it is overwritten
           OLD_MAIN=$(grep 'version "' Casks/autenticacao-gov.rb | cut -d '"' -f 2 | cut -d',' -f1)
@@ -105,11 +124,11 @@ jobs:
 
           SHA256=$(sha256sum release.pkg | awk '{print $1}')
 
-          # Update the values in the .rb Cask. The URL is written literally, because
-          # upstream tags do not always match the pkg version.
+          # Update the values in the .rb Cask. The tag comes from the release, the rest
+          # of the URL keeps the cask's version interpolation.
           sed -i "s/version \".*\"/version \"${NEW_VERSION_STR}\"/" Casks/autenticacao-gov.rb
           sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Casks/autenticacao-gov.rb
-          sed -i "s|^  url \".*\"|  url \"${DOWNLOAD_URL}\"|" Casks/autenticacao-gov.rb
+          sed -i "s|^  url \".*\"|  url \"https://github.com/amagovpt/autenticacao.gov/releases/download/${TAG_NAME}/Autenticacao.gov_MacOS_#{version.csv.first}.#{version.csv.second}-Signed.pkg\"|" Casks/autenticacao-gov.rb
 
       - name: Commit, push branch and open PR
         if: env.UPDATED == 'true'
