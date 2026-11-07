@@ -1,6 +1,6 @@
 cask "autenticacao-gov" do
-  version "3.15.0,6058"
-  sha256 "4963fa0d67306e021d9b9bfee26fd372936269465d8bc7b7baacc04624d95588"
+  version "3.16.1,6201"
+  sha256 "0df1526d607242349d030ea927a08adc450aa16f0f2cb70525147f6e8ab845dc"
 
   url "https://github.com/amagovpt/autenticacao.gov/releases/download/v#{version.csv.first}/Autenticacao.gov_MacOS_#{version.csv.first}.#{version.csv.second}-Signed.pkg"
   name "Autenticação.gov"
